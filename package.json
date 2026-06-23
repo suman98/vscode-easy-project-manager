@@ -144,7 +144,8 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile",
-        "lint": "eslint src --ext ts"
+        "lint": "eslint src --ext ts",
+        "package": "npx @vscode/vsce package --allow-missing-repository"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",

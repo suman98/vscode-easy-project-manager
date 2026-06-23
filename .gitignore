@@ -1,0 +1,4 @@
+# Ignore playground quick prompt
+.playground
+node_modules
+.vscode

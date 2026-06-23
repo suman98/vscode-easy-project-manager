@@ -1,0 +1,143 @@
+{
+    "name": "project-manager-easy",
+    "displayName": "Project Manager",
+    "description": "Easily manage and switch between workspaces",
+    "version": "1.0.0",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "keywords": [
+        "project",
+        "manager",
+        "workspace",
+        "switch"
+    ],
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "configuration": {
+            "title": "Project Manager",
+            "properties": {
+                "projectManager.file": {
+                    "type": "string",
+                    "default": "~/.vscode-project-manager/projects.json",
+                    "description": "Path to the projects JSON file"
+                },
+                "projectManager.openInNewWindow": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Open projects in a new VS Code window"
+                }
+            }
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "projectManager",
+                    "title": "Project Manager",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "projectManager": [
+                {
+                    "id": "projectManagerView",
+                    "name": "Projects",
+                    "type": "webview",
+                    "contextualTitle": "Project Manager"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "projectManager.addCurrentWorkspace",
+                "title": "Add Current Workspace",
+                "category": "Project Manager",
+                "icon": "$(add)"
+            },
+            {
+                "command": "projectManager.refresh",
+                "title": "Refresh",
+                "category": "Project Manager",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "projectManager.openProject",
+                "title": "Open Project",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.openProjectInNewWindow",
+                "title": "Open in New Window",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.removeProject",
+                "title": "Remove",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.editTags",
+                "title": "Edit Tags",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.renameProject",
+                "title": "Rename",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.revealProjectFolder",
+                "title": "Reveal in Finder/Explorer",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.copyPath",
+                "title": "Copy Path",
+                "category": "Project Manager"
+            },
+            {
+                "command": "projectManager.collapseAll",
+                "title": "Collapse All",
+                "category": "Project Manager",
+                "icon": "$(collapse-all)"
+            },
+            {
+                "command": "projectManager.search",
+                "title": "Search Projects",
+                "category": "Project Manager",
+                "icon": "$(search)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "projectManager.addCurrentWorkspace",
+                    "when": "view == projectManagerView",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "projectManager.refresh",
+                    "when": "view == projectManagerView",
+                    "group": "navigation@2"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "lint": "eslint src --ext ts"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.85.0",
+        "typescript": "^5.3.0"
+    }
+}

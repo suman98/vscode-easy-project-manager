@@ -74,6 +74,8 @@ class ProjectWebviewProvider {
             this.projectService.getAllOrganizations()
         ]);
         const activeRootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const alreadyAdded = activeRootPath ? projects.some(p => p.rootPath === activeRootPath) : false;
+        await vscode.commands.executeCommand('setContext', 'projectManager.currentWorkspaceAdded', alreadyAdded);
         this._view.webview.postMessage({ type: 'update', projects, allOrganizations, activeRootPath });
     }
     async handleMessage(msg) {
@@ -201,6 +203,29 @@ class ProjectWebviewProvider {
                 });
                 this.refresh();
                 break;
+            case 'renameOrg': {
+                const newName = await vscode.window.showInputBox({
+                    prompt: 'Rename organization',
+                    value: msg.org,
+                    validateInput: v => v.trim() ? null : 'Name cannot be empty',
+                    ignoreFocusOut: true
+                });
+                if (!newName || newName.trim() === msg.org) {
+                    return;
+                }
+                await this.projectService.renameOrganization(msg.org, newName.trim());
+                this.refresh();
+                break;
+            }
+            case 'deleteOrg': {
+                const confirm = await vscode.window.showWarningMessage(`Delete organization "${msg.org}"? Projects inside will be moved to No Organization.`, { modal: true }, 'Delete');
+                if (confirm !== 'Delete') {
+                    return;
+                }
+                await this.projectService.deleteOrganization(msg.org);
+                this.refresh();
+                break;
+            }
         }
     }
     buildHtml(webview) {
@@ -234,6 +259,11 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 .group-body.collapsed{display:none}
 .group-count{opacity:.4;font-weight:400;margin-left:4px;font-size:10px}
 .group-header>*{pointer-events:none}
+.org-action-btn{pointer-events:auto!important;background:none;border:none;color:inherit;cursor:pointer;padding:0 4px;font-size:12px;opacity:0;transition:opacity .1s;line-height:1}
+.org-action-btn:first-of-type{margin-left:auto}
+.group-header:hover .org-action-btn{opacity:.6}
+.org-action-btn:hover{opacity:1!important}
+.delete-org-btn:hover{color:var(--vscode-errorForeground)!important;opacity:1!important}
 
 /* ── project items ── */
 .project-item{display:flex;align-items:center;padding:3px 6px 3px 12px;cursor:pointer;position:relative;min-height:30px;border:1px solid transparent}
@@ -481,6 +511,28 @@ function makeGroup(label, projects, isUncategorized) {
     header.innerHTML =
         '<span class="chevron">▾</span>' + escHtml(label) +
         '<span class="group-count">' + projects.length + '</span>';
+
+    if (!isUncategorized) {
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'org-action-btn';
+        renameBtn.title = 'Rename organization';
+        renameBtn.textContent = '✎';
+        renameBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'renameOrg', org: label });
+        });
+        header.appendChild(renameBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'org-action-btn delete-org-btn';
+        deleteBtn.title = 'Delete organization';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'deleteOrg', org: label });
+        });
+        header.appendChild(deleteBtn);
+    }
 
     const body = document.createElement('div');
     body.className = 'group-body';

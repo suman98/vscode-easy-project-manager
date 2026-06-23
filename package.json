@@ -60,6 +60,12 @@
                 "icon": "$(add)"
             },
             {
+                "command": "projectManager.currentWorkspaceAdded",
+                "title": "Project Added",
+                "category": "Project Manager",
+                "icon": "$(check)"
+            },
+            {
                 "command": "projectManager.refresh",
                 "title": "Refresh",
                 "category": "Project Manager",
@@ -117,7 +123,12 @@
             "view/title": [
                 {
                     "command": "projectManager.addCurrentWorkspace",
-                    "when": "view == projectManagerView",
+                    "when": "view == projectManagerView && !projectManager.currentWorkspaceAdded",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "projectManager.currentWorkspaceAdded",
+                    "when": "view == projectManagerView && projectManager.currentWorkspaceAdded",
                     "group": "navigation@1"
                 },
                 {

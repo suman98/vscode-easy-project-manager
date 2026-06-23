@@ -103,6 +103,32 @@ class ProjectService {
             await this.saveProjects(projects);
         }
     }
+    async deleteOrganization(name) {
+        const projects = await this.getProjects();
+        let changed = false;
+        for (const p of projects) {
+            if (p.organization === name) {
+                p.organization = '';
+                changed = true;
+            }
+        }
+        if (changed) {
+            await this.saveProjects(projects);
+        }
+    }
+    async renameOrganization(oldName, newName) {
+        const projects = await this.getProjects();
+        let changed = false;
+        for (const p of projects) {
+            if (p.organization === oldName) {
+                p.organization = newName;
+                changed = true;
+            }
+        }
+        if (changed) {
+            await this.saveProjects(projects);
+        }
+    }
     async updateOrganization(rootPath, organization) {
         const projects = await this.getProjects();
         const p = projects.find(p => p.rootPath === rootPath);

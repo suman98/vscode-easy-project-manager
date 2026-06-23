@@ -62,7 +62,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.commands.registerCommand('projectManager.openProject', () =>
             openProjectFromQuickPick(projectService, configService)
-        )
+        ),
+
+        vscode.commands.registerCommand('projectManager.currentWorkspaceAdded', () => {
+            vscode.window.showInformationMessage('This workspace is already added to Project Manager.');
+        })
     );
 
     context.subscriptions.push({

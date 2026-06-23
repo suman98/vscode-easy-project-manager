@@ -50,6 +50,8 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         }),
 
+        vscode.workspace.onDidChangeWorkspaceFolders(() => provider.sendProjects()),
+
         vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () =>
             addCurrentWorkspace(projectService, provider)
         ),

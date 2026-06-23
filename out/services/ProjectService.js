@@ -52,7 +52,6 @@ class ProjectService {
         try {
             const content = await fs.readFile(filePath, 'utf-8');
             const raw = JSON.parse(content);
-            // Migrate legacy format: convert tags[] → organization string
             this.cache = raw.map(p => ({
                 name: p.name ?? '',
                 rootPath: p.rootPath ?? '',
@@ -61,7 +60,10 @@ class ProjectService {
                     ? p.organization
                     : (Array.isArray(p.tags) && p.tags[0] ? String(p.tags[0]) : ''),
                 enabled: p.enabled ?? true,
-                profile: p.profile ?? ''
+                profile: p.profile ?? '',
+                color: p.color ?? '',
+                label: p.label ?? '',
+                secondaryEditor: p.secondaryEditor ?? ''
             }));
             return this.cache;
         }
@@ -109,6 +111,16 @@ class ProjectService {
             await this.saveProjects(projects);
         }
     }
+    async updateProjectSettings(rootPath, settings) {
+        const projects = await this.getProjects();
+        const p = projects.find(p => p.rootPath === rootPath);
+        if (p) {
+            p.color = settings.color;
+            p.label = settings.label;
+            p.secondaryEditor = settings.secondaryEditor;
+            await this.saveProjects(projects);
+        }
+    }
     async getAllOrganizations() {
         const projects = await this.getProjects();
         const set = new Set();
@@ -134,7 +146,8 @@ class ProjectService {
         const lower = query.toLowerCase();
         return projects.filter(p => p.name.toLowerCase().includes(lower) ||
             p.rootPath.toLowerCase().includes(lower) ||
-            p.organization.toLowerCase().includes(lower));
+            p.organization.toLowerCase().includes(lower) ||
+            p.label.toLowerCase().includes(lower));
     }
 }
 exports.ProjectService = ProjectService;

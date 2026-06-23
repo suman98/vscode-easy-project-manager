@@ -73,7 +73,7 @@ function activate(context) {
             setupFileWatcher();
             provider.refresh();
         }
-    }), vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () => (0, addProject_1.addCurrentWorkspace)(projectService, provider)), vscode.commands.registerCommand('projectManager.refresh', () => provider.refresh()), vscode.commands.registerCommand('projectManager.openProject', () => (0, openProject_1.openProjectFromQuickPick)(projectService, configService)));
+    }), vscode.workspace.onDidChangeWorkspaceFolders(() => provider.sendProjects()), vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () => (0, addProject_1.addCurrentWorkspace)(projectService, provider)), vscode.commands.registerCommand('projectManager.refresh', () => provider.refresh()), vscode.commands.registerCommand('projectManager.openProject', () => (0, openProject_1.openProjectFromQuickPick)(projectService, configService)));
     context.subscriptions.push({
         dispose: () => { fileWatcher?.close(); }
     });

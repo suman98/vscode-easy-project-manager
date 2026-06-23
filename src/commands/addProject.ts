@@ -63,7 +63,10 @@ export async function addCurrentWorkspace(
         paths: [],
         organization,
         enabled: true,
-        profile: ''
+        profile: '',
+        color: '',
+        label: '',
+        secondaryEditor: ''
     });
 
     if (added) {

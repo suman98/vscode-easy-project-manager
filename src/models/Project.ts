@@ -5,4 +5,7 @@ export interface Project {
     organization: string;
     enabled: boolean;
     profile: string;
+    color: string;
+    label: string;
+    secondaryEditor: string;
 }

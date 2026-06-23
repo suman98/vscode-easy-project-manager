@@ -91,7 +91,10 @@ async function addCurrentWorkspace(projectService, provider) {
         paths: [],
         organization,
         enabled: true,
-        profile: ''
+        profile: '',
+        color: '',
+        label: '',
+        secondaryEditor: ''
     });
     if (added) {
         vscode.window.showInformationMessage(`Project "${name}" added.`);

@@ -21,7 +21,6 @@ export class ProjectService {
         try {
             const content = await fs.readFile(filePath, 'utf-8');
             const raw = JSON.parse(content);
-            // Migrate legacy format: convert tags[] → organization string
             this.cache = (raw as any[]).map(p => ({
                 name: p.name ?? '',
                 rootPath: p.rootPath ?? '',
@@ -30,7 +29,10 @@ export class ProjectService {
                     ? p.organization
                     : (Array.isArray(p.tags) && p.tags[0] ? String(p.tags[0]) : ''),
                 enabled: p.enabled ?? true,
-                profile: p.profile ?? ''
+                profile: p.profile ?? '',
+                color: p.color ?? '',
+                label: p.label ?? '',
+                secondaryEditor: p.secondaryEditor ?? ''
             })) as Project[];
             return this.cache;
         } catch {
@@ -76,6 +78,20 @@ export class ProjectService {
         if (p) { p.organization = organization; await this.saveProjects(projects); }
     }
 
+    async updateProjectSettings(
+        rootPath: string,
+        settings: Pick<Project, 'color' | 'label' | 'secondaryEditor'>
+    ): Promise<void> {
+        const projects = await this.getProjects();
+        const p = projects.find(p => p.rootPath === rootPath);
+        if (p) {
+            p.color = settings.color;
+            p.label = settings.label;
+            p.secondaryEditor = settings.secondaryEditor;
+            await this.saveProjects(projects);
+        }
+    }
+
     async getAllOrganizations(): Promise<string[]> {
         const projects = await this.getProjects();
         const set = new Set<string>();
@@ -100,7 +116,8 @@ export class ProjectService {
         return projects.filter(p =>
             p.name.toLowerCase().includes(lower) ||
             p.rootPath.toLowerCase().includes(lower) ||
-            p.organization.toLowerCase().includes(lower)
+            p.organization.toLowerCase().includes(lower) ||
+            p.label.toLowerCase().includes(lower)
         );
     }
 }

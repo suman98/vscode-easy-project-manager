@@ -37,6 +37,7 @@ exports.ProjectWebviewProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs/promises"));
+const child_process_1 = require("child_process");
 const addProject_1 = require("../commands/addProject");
 async function pathExists(p) {
     try {
@@ -72,7 +73,8 @@ class ProjectWebviewProvider {
             this.projectService.getProjects(),
             this.projectService.getAllOrganizations()
         ]);
-        this._view.webview.postMessage({ type: 'update', projects, allOrganizations });
+        const activeRootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        this._view.webview.postMessage({ type: 'update', projects, allOrganizations, activeRootPath });
     }
     async handleMessage(msg) {
         const findProject = async (p) => {
@@ -152,6 +154,53 @@ class ProjectWebviewProvider {
             case 'reorder':
                 await this.projectService.reorderProjects(msg.paths);
                 break;
+            case 'openTerminal': {
+                const project = await findProject(msg.path);
+                if (!project) {
+                    return;
+                }
+                const terminal = vscode.window.createTerminal({
+                    name: project.name,
+                    cwd: project.rootPath
+                });
+                terminal.show();
+                break;
+            }
+            case 'openSecondaryEditor': {
+                const project = await findProject(msg.path);
+                if (!project?.secondaryEditor) {
+                    return;
+                }
+                if (!(await pathExists(project.rootPath))) {
+                    vscode.window.showErrorMessage(`Path not found: ${project.rootPath}`);
+                    return;
+                }
+                try {
+                    // Use the user's login shell with -i so .zshrc/.bashrc is sourced,
+                    // making shell functions (e.g. `vscode`) available.
+                    const escapedPath = project.rootPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                    const cmd = `${project.secondaryEditor} "${escapedPath}"`;
+                    if (process.platform === 'win32') {
+                        (0, child_process_1.spawn)('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore' }).unref();
+                    }
+                    else {
+                        const shell = process.env.SHELL || '/bin/zsh';
+                        (0, child_process_1.spawn)(shell, ['-i', '-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+                    }
+                }
+                catch {
+                    vscode.window.showErrorMessage(`Failed to launch "${project.secondaryEditor}". Check Settings.`);
+                }
+                break;
+            }
+            case 'saveSettings':
+                await this.projectService.updateProjectSettings(msg.path, {
+                    color: msg.color,
+                    label: msg.label,
+                    secondaryEditor: msg.secondaryEditor
+                });
+                this.refresh();
+                break;
         }
     }
     buildHtml(webview) {
@@ -165,6 +214,7 @@ class ProjectWebviewProvider {
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);color:var(--vscode-foreground);background:transparent;overflow-x:hidden}
 
+/* ── search ── */
 .search-wrap{position:sticky;top:0;z-index:10;padding:6px 8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));border-bottom:1px solid var(--vscode-sideBarSectionHeader-border,transparent)}
 .search-row{position:relative;display:flex;align-items:center}
 .search-icon{position:absolute;left:8px;opacity:.5;font-size:13px;pointer-events:none}
@@ -174,6 +224,7 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 .clear-btn{position:absolute;right:6px;background:none;border:none;cursor:pointer;color:var(--vscode-input-foreground);opacity:.5;font-size:14px;line-height:1;padding:0 2px;display:none}
 .clear-btn:hover{opacity:1}
 
+/* ── groups ── */
 .group{margin-top:2px}
 .group-header{display:flex;align-items:center;padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--vscode-sideBarSectionHeader-foreground,var(--vscode-foreground));cursor:pointer;user-select:none;opacity:.7;border-radius:2px;transition:background .1s,opacity .1s}
 .group-header:hover{opacity:1}
@@ -184,30 +235,67 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 .group-count{opacity:.4;font-weight:400;margin-left:4px;font-size:10px}
 .group-header>*{pointer-events:none}
 
-.project-item{display:flex;align-items:center;padding:3px 8px 3px 12px;cursor:pointer;position:relative;min-height:30px;border:1px solid transparent}
+/* ── project items ── */
+.project-item{display:flex;align-items:center;padding:3px 6px 3px 12px;cursor:pointer;position:relative;min-height:30px;border:1px solid transparent}
 .project-item:hover{background:var(--vscode-list-hoverBackground)}
 .drag-handle{opacity:0;cursor:grab;padding-right:6px;flex-shrink:0;font-size:13px;color:var(--vscode-foreground);line-height:1}
 .project-item:hover .drag-handle{opacity:.35}
 .drag-handle:hover{opacity:.8!important}
 .drag-handle:active{cursor:grabbing}
-.folder-icon{margin-right:5px;flex-shrink:0;font-size:14px}
+.folder-icon{margin-right:5px;flex-shrink:0;display:flex;align-items:center;line-height:1}
 .info{flex:1;min-width:0;overflow:hidden}
-.proj-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.proj-org{font-size:11px;opacity:.45;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.proj-path{font-size:11px;opacity:.45;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.proj-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-label{display:inline-block;font-size:10px;font-weight:400;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);padding:1px 5px;border-radius:8px;flex-shrink:0;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-sub{font-size:11px;opacity:.5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;empty-cells:hide}
+.proj-sub:empty{display:none}
 .hl{background:var(--vscode-editor-findMatchHighlightBackground,rgba(255,200,0,.3));border-radius:2px}
 
+/* ── action buttons ── */
+.proj-actions{display:flex;gap:1px;margin-left:4px;align-items:center;flex-shrink:0;opacity:0;transition:opacity .1s}
+.project-item:hover .proj-actions{opacity:1}
+.act-btn{background:none;border:none;cursor:pointer;color:var(--vscode-foreground);opacity:.55;padding:3px 5px;border-radius:3px;line-height:1;font-size:12px;font-family:monospace}
+.act-btn:hover{opacity:1;background:var(--vscode-toolbar-hoverBackground,rgba(127,127,127,.15))}
+
+/* ── drag ── */
+.project-item.active-project{background:var(--vscode-list-inactiveSelectionBackground,rgba(255,255,255,.06))}
+.project-item.active-project .proj-name-text{font-weight:600}
 .project-item.dragging{opacity:.3}
 .project-item.drop-before{border-top:2px solid var(--vscode-focusBorder)!important}
 .project-item.drop-after{border-bottom:2px solid var(--vscode-focusBorder)!important}
-
 .empty{padding:24px 16px;opacity:.55;font-size:12px;text-align:center;line-height:1.6}
 
+/* ── context menu ── */
 .ctx{position:fixed;background:var(--vscode-menu-background,var(--vscode-editorWidget-background));border:1px solid var(--vscode-menu-border,var(--vscode-widget-border));box-shadow:0 4px 14px rgba(0,0,0,.35);border-radius:4px;padding:4px 0;z-index:1000;min-width:180px;display:none}
 .ctx.open{display:block}
 .ctx-item{padding:5px 14px;cursor:pointer;font-size:var(--vscode-font-size);color:var(--vscode-menu-foreground,var(--vscode-foreground));white-space:nowrap}
 .ctx-item:hover{background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
 .ctx-sep{height:1px;background:var(--vscode-menu-separatorBackground,var(--vscode-widget-border));margin:3px 0}
+
+/* ── settings panel ── */
+.settings-panel{position:fixed;bottom:0;left:0;right:0;background:var(--vscode-sideBar-background,var(--vscode-editor-background));border-top:2px solid var(--vscode-focusBorder);padding:12px;z-index:500;display:none;box-shadow:0 -6px 20px rgba(0,0,0,.25)}
+.settings-panel.open{display:block}
+.sp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sp-title{font-size:11px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-right:8px}
+.sp-close{background:none;border:none;cursor:pointer;color:var(--vscode-foreground);opacity:.6;font-size:15px;padding:0;line-height:1;flex-shrink:0}
+.sp-close:hover{opacity:1}
+.sp-field{margin-bottom:10px}
+.sp-field-label{font-size:11px;opacity:.65;margin-bottom:4px}
+.sp-input{width:100%;padding:4px 8px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,transparent);border-radius:2px;outline:none;font-family:inherit;font-size:inherit}
+.sp-input:focus{border-color:var(--vscode-focusBorder)}
+.sp-input::placeholder{color:var(--vscode-input-placeholderForeground)}
+.sp-hint{font-size:10px;opacity:.45;margin-top:3px}
+.color-swatches{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.swatch{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex-shrink:0;position:relative;transition:transform .1s}
+.swatch:hover{transform:scale(1.15)}
+.swatch.selected{border-color:var(--vscode-focusBorder);transform:scale(1.15)}
+.swatch-none{background:transparent;border:1.5px dashed var(--vscode-input-border,#666)}
+.swatch-none::after{content:'×';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;opacity:.5;line-height:1}
+.sp-footer{display:flex;gap:6px;margin-top:10px}
+.btn-primary{flex:1;padding:5px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:2px;cursor:pointer;font-family:inherit;font-size:inherit}
+.btn-primary:hover{background:var(--vscode-button-hoverBackground)}
+.btn-secondary{padding:5px 12px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));border:none;border-radius:2px;cursor:pointer;font-family:inherit;font-size:inherit}
+.btn-secondary:hover{opacity:.85}
 </style>
 </head>
 <body>
@@ -222,6 +310,7 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 
 <div id="list"></div>
 
+<!-- context menu -->
 <div class="ctx" id="ctx">
   <div class="ctx-item" data-action="openProject">Open</div>
   <div class="ctx-item" data-action="openNew">Open in New Window</div>
@@ -231,37 +320,102 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
   <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="moveToOrg">Move to Organization…</div>
   <div class="ctx-item" data-action="rename">Rename</div>
+  <div class="ctx-item" data-action="openProjectSettings">Settings…</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="remove">Remove</div>
+</div>
+
+<!-- settings panel -->
+<div class="settings-panel" id="settings-panel">
+  <div class="sp-header">
+    <div class="sp-title" id="sp-title">Project Settings</div>
+    <button class="sp-close" id="sp-close">✕</button>
+  </div>
+
+  <div class="sp-field">
+    <div class="sp-field-label">Color</div>
+    <div class="color-swatches" id="color-swatches"></div>
+  </div>
+
+  <div class="sp-field">
+    <div class="sp-field-label">Label</div>
+    <input class="sp-input" id="sp-label" placeholder="Optional short label…" autocomplete="off"/>
+  </div>
+
+  <div class="sp-field">
+    <div class="sp-field-label">Secondary Editor</div>
+    <input class="sp-input" id="sp-editor" placeholder="e.g. cursor, code-insiders, subl" autocomplete="off"/>
+    <div class="sp-hint">Command used to open this project in a second editor. An icon will appear in the project row.</div>
+  </div>
+
+  <div class="sp-footer">
+    <button class="btn-primary" id="sp-save">Save</button>
+    <button class="btn-secondary" id="sp-cancel">Cancel</button>
+  </div>
 </div>
 
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 
-let allProjects = [];
-let allOrganizations = [];
-let dragSrcPath = null;
-let ctxProject = null;
+const PRESET_COLORS = [
+    '',        // none
+    '#ef4444', // red
+    '#f97316', // orange
+    '#eab308', // yellow
+    '#22c55e', // green
+    '#14b8a6', // teal
+    '#3b82f6', // blue
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#94a3b8'  // slate
+];
 
-const listEl   = document.getElementById('list');
-const searchEl = document.getElementById('search');
-const clearBtn = document.getElementById('clear-btn');
-const ctxEl    = document.getElementById('ctx');
+let allProjects      = [];
+let allOrganizations = [];
+let activeRootPath   = '';
+let dragSrcPath      = null;
+let ctxProject       = null;
+let spProject        = null;
+let spColor          = '';
+
+const listEl      = document.getElementById('list');
+const searchEl    = document.getElementById('search');
+const clearBtn    = document.getElementById('clear-btn');
+const ctxEl       = document.getElementById('ctx');
+const settingsEl  = document.getElementById('settings-panel');
+const spTitleEl   = document.getElementById('sp-title');
+const spLabelEl   = document.getElementById('sp-label');
+const spEditorEl  = document.getElementById('sp-editor');
+const swatchesEl  = document.getElementById('color-swatches');
+
+// ── build color swatches (once) ───────────────────────────────────────────────
+PRESET_COLORS.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (c === '' ? ' swatch-none' : '');
+    if (c) { s.style.background = c; }
+    s.dataset.color = c;
+    s.addEventListener('click', () => {
+        spColor = c;
+        swatchesEl.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
+        s.classList.add('selected');
+    });
+    swatchesEl.appendChild(s);
+});
 
 // ── messages ──────────────────────────────────────────────────────────────────
 window.addEventListener('message', ({ data }) => {
     if (data.type === 'update') {
         allProjects      = data.projects;
         allOrganizations = data.allOrganizations || [];
+        activeRootPath   = data.activeRootPath   || '';
         render(searchEl.value);
     }
 });
 
 // ── search ────────────────────────────────────────────────────────────────────
 function doSearch() {
-    const q = searchEl.value;
-    clearBtn.style.display = q ? 'block' : 'none';
-    render(q);
+    clearBtn.style.display = searchEl.value ? 'block' : 'none';
+    render(searchEl.value);
 }
 searchEl.addEventListener('keyup',  doSearch);
 searchEl.addEventListener('input',  doSearch);
@@ -281,7 +435,8 @@ function render(query) {
         ? allProjects.filter(p =>
             p.name.toLowerCase().includes(q) ||
             p.rootPath.toLowerCase().includes(q) ||
-            (p.organization || '').toLowerCase().includes(q))
+            (p.organization || '').toLowerCase().includes(q) ||
+            (p.label || '').toLowerCase().includes(q))
         : allProjects;
 
     if (filtered.length === 0) {
@@ -292,7 +447,6 @@ function render(query) {
     }
 
     if (q) {
-        // flat list when searching — show org as subtitle
         const frag = document.createDocumentFragment();
         for (const p of filtered) { frag.appendChild(makeItem(p, false, q)); }
         listEl.appendChild(frag);
@@ -313,15 +467,13 @@ function renderGrouped(projects) {
         }
     }
     const frag = document.createDocumentFragment();
-    for (const org of [...orgMap.keys()].sort()) {
-        frag.appendChild(makeGroup(org, orgMap.get(org), false));
-    }
+    for (const org of [...orgMap.keys()].sort()) { frag.appendChild(makeGroup(org, orgMap.get(org), false)); }
     if (noOrg.length > 0) { frag.appendChild(makeGroup('No Organization', noOrg, true)); }
     listEl.appendChild(frag);
 }
 
 function makeGroup(label, projects, isUncategorized) {
-    const group = document.createElement('div');
+    const group  = document.createElement('div');
     group.className = 'group';
 
     const header = document.createElement('div');
@@ -338,7 +490,6 @@ function makeGroup(label, projects, isUncategorized) {
         body.classList.toggle('collapsed');
     });
 
-    // drag-to-org: drop project onto header → moves it to this org
     const getTargetOrg = () => isUncategorized ? '' : label;
     const canDrop = () => {
         if (!dragSrcPath) { return false; }
@@ -357,10 +508,7 @@ function makeGroup(label, projects, isUncategorized) {
         e.dataTransfer.dropEffect = 'move';
     });
     header.addEventListener('dragleave', e => {
-        // only remove indicator when cursor truly leaves the header element
-        if (!header.contains(e.relatedTarget)) {
-            header.classList.remove('org-drop-target');
-        }
+        if (!header.contains(e.relatedTarget)) { header.classList.remove('org-drop-target'); }
     });
     header.addEventListener('drop', e => {
         header.classList.remove('org-drop-target');
@@ -383,23 +531,56 @@ function makeGroup(label, projects, isUncategorized) {
 
 function makeItem(project, draggable, q) {
     const el = document.createElement('div');
-    el.className = 'project-item';
+    el.className = 'project-item' + (project.rootPath === activeRootPath ? ' active-project' : '');
     el.dataset.path = project.rootPath;
 
-    const name = q ? highlight(project.name, q) : escHtml(project.name);
+    const nameHtml = q ? highlight(project.name, q) : escHtml(project.name);
+    const subHtml  = q && project.organization ? highlight(project.organization, q) : '';
 
+    // label badge
+    const labelHtml = project.label
+        ? '<span class="proj-label">' + escHtml(project.label) + '</span>'
+        : '';
+
+    const folderColorStyle = project.color ? ' style="color:' + escHtml(project.color) + '"' : '';
+
+    // static inner HTML
     el.innerHTML =
         (draggable ? '<span class="drag-handle" title="Drag to reorder · drag to org header to move">⠿</span>' : '') +
-        '<span class="folder-icon">📁</span>' +
+        '<span class="folder-icon"' + folderColorStyle + '><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M1.5 3A1.5 1.5 0 0 0 0 4.5v8A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H7.621a1.5 1.5 0 0 1-1.06-.44L5.5 3H1.5z"/></svg></span>' +
         '<div class="info">' +
-            '<div class="proj-name">' + name + '</div>' +
-            (q && project.organization
-                ? '<div class="proj-org">' + highlight(project.organization, q) + '</div>'
-                : '<div class="proj-path">' + (q ? highlight(project.rootPath, q) : escHtml(project.rootPath)) + '</div>') +
-        '</div>';
+            '<div class="proj-name"><span class="proj-name-text">' + nameHtml + '</span>' + labelHtml + '</div>' +
+            '<div class="proj-sub">' + subHtml + '</div>' +
+        '</div>' +
+        '<div class="proj-actions"></div>';
+
+    // action buttons (appended via DOM to avoid XSS via secondaryEditor string)
+    const actionsEl = el.querySelector('.proj-actions');
+
+    const termBtn = document.createElement('button');
+    termBtn.className = 'act-btn';
+    termBtn.title = 'Open in terminal';
+    termBtn.textContent = '>_';
+    termBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'openTerminal', path: project.rootPath });
+    });
+    actionsEl.appendChild(termBtn);
+
+    if (project.secondaryEditor) {
+        const editorBtn = document.createElement('button');
+        editorBtn.className = 'act-btn';
+        editorBtn.title = 'Open in ' + project.secondaryEditor;
+        editorBtn.textContent = '↗';
+        editorBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'openSecondaryEditor', path: project.rootPath });
+        });
+        actionsEl.appendChild(editorBtn);
+    }
 
     el.addEventListener('click', e => {
-        if (e.target.closest('.drag-handle')) { return; }
+        if (e.target.closest('.drag-handle') || e.target.closest('.proj-actions')) { return; }
         vscode.postMessage({ type: 'openProject', path: project.rootPath });
     });
 
@@ -416,7 +597,6 @@ function makeItem(project, draggable, q) {
 // ── drag & drop ───────────────────────────────────────────────────────────────
 function attachDrag(el, project) {
     const handle = el.querySelector('.drag-handle');
-
     handle.addEventListener('mousedown', () => el.setAttribute('draggable', 'true'));
     handle.addEventListener('mouseup',   () => el.setAttribute('draggable', 'false'));
 
@@ -426,14 +606,12 @@ function attachDrag(el, project) {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', project.rootPath);
     });
-
     el.addEventListener('dragend', () => {
         el.setAttribute('draggable', 'false');
         el.classList.remove('dragging');
         clearDropIndicators();
         dragSrcPath = null;
     });
-
     el.addEventListener('dragover', e => {
         if (!dragSrcPath || dragSrcPath === project.rootPath) { return; }
         e.preventDefault();
@@ -442,22 +620,16 @@ function attachDrag(el, project) {
         const rect = el.getBoundingClientRect();
         el.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
     });
-
     el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after'));
-
     el.addEventListener('drop', e => {
         if (!dragSrcPath || dragSrcPath === project.rootPath) { return; }
         e.preventDefault();
         const insertBefore = el.classList.contains('drop-before');
         clearDropIndicators();
-
         const srcIdx = allProjects.findIndex(p => p.rootPath === dragSrcPath);
-        const tgtIdx = allProjects.findIndex(p => p.rootPath === project.rootPath);
-        if (srcIdx === -1 || tgtIdx === -1) { return; }
         const [moved] = allProjects.splice(srcIdx, 1);
         const newTgt  = allProjects.findIndex(p => p.rootPath === project.rootPath);
         allProjects.splice(insertBefore ? newTgt : newTgt + 1, 0, moved);
-
         vscode.postMessage({ type: 'reorder', paths: allProjects.map(p => p.rootPath) });
         render(searchEl.value);
     });
@@ -475,29 +647,72 @@ function showCtx(x, y) {
     ctxEl.classList.add('open');
     requestAnimationFrame(() => {
         const r = ctxEl.getBoundingClientRect();
-        const left = Math.max(0, Math.min(x, window.innerWidth  - r.width));
-        const top  = Math.max(0, Math.min(y, window.innerHeight - r.height));
-        ctxEl.style.left = left + 'px';
-        ctxEl.style.top  = top  + 'px';
+        ctxEl.style.left = Math.max(0, Math.min(x, window.innerWidth  - r.width))  + 'px';
+        ctxEl.style.top  = Math.max(0, Math.min(y, window.innerHeight - r.height)) + 'px';
     });
 }
 
 ctxEl.addEventListener('click', e => {
     const item = e.target.closest('[data-action]');
     if (!item || !ctxProject) { return; }
-    vscode.postMessage({ type: item.dataset.action, path: ctxProject.rootPath });
+    const action = item.dataset.action;
+    if (action === 'openProjectSettings') {
+        openSettings(ctxProject);
+    } else {
+        vscode.postMessage({ type: action, path: ctxProject.rootPath });
+    }
     ctxEl.classList.remove('open');
     ctxProject = null;
 });
 
 document.addEventListener('click', () => ctxEl.classList.remove('open'));
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { ctxEl.classList.remove('open'); } });
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        ctxEl.classList.remove('open');
+        closeSettings();
+    }
+});
+
+// ── settings panel ────────────────────────────────────────────────────────────
+function openSettings(project) {
+    spProject = project;
+    spColor   = project.color || '';
+    spTitleEl.textContent = 'Settings — ' + project.name;
+    spLabelEl.value  = project.label  || '';
+    spEditorEl.value = project.secondaryEditor || '';
+
+    // mark selected swatch
+    swatchesEl.querySelectorAll('.swatch').forEach(s => {
+        s.classList.toggle('selected', s.dataset.color === spColor);
+    });
+
+    settingsEl.classList.add('open');
+    spLabelEl.focus();
+}
+
+function closeSettings() {
+    settingsEl.classList.remove('open');
+    spProject = null;
+}
+
+document.getElementById('sp-close').addEventListener('click',  closeSettings);
+document.getElementById('sp-cancel').addEventListener('click', closeSettings);
+document.getElementById('sp-save').addEventListener('click', () => {
+    if (!spProject) { return; }
+    vscode.postMessage({
+        type: 'saveSettings',
+        path: spProject.rootPath,
+        color: spColor,
+        label: spLabelEl.value.trim(),
+        secondaryEditor: spEditorEl.value.trim()
+    });
+    closeSettings();
+});
 
 // ── utils ─────────────────────────────────────────────────────────────────────
 function escHtml(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function highlight(text, q) {
     const idx = text.toLowerCase().indexOf(q.toLowerCase());
     if (idx === -1) { return escHtml(text); }

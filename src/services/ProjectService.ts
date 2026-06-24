@@ -119,6 +119,23 @@ export class ProjectService {
         return [...set].sort();
     }
 
+    async reorderOrganizations(orgOrder: string[]): Promise<void> {
+        const projects = await this.getProjects();
+        const grouped = new Map<string, Project[]>();
+        for (const p of projects) {
+            const key = p.organization || '';
+            if (!grouped.has(key)) { grouped.set(key, []); }
+            grouped.get(key)!.push(p);
+        }
+        const reordered: Project[] = [];
+        for (const org of orgOrder) {
+            const ps = grouped.get(org);
+            if (ps) { reordered.push(...ps); grouped.delete(org); }
+        }
+        for (const ps of grouped.values()) { reordered.push(...ps); }
+        await this.saveProjects(reordered);
+    }
+
     async reorderProjects(rootPaths: string[]): Promise<void> {
         const projects = await this.getProjects();
         const map = new Map(projects.map(p => [p.rootPath, p]));

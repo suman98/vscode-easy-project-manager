@@ -21,7 +21,8 @@ type WebviewMessage =
     | { type: 'openSecondaryEditor'; path: string }
     | { type: 'saveSettings'; path: string; color: string; label: string; secondaryEditor: string }
     | { type: 'renameOrg'; org: string }
-    | { type: 'deleteOrg'; org: string };
+    | { type: 'deleteOrg'; org: string }
+    | { type: 'reorderOrgs'; orgs: string[] };
 
 async function pathExists(p: string): Promise<boolean> {
     try { await fs.access(p); return true; } catch { return false; }
@@ -134,6 +135,9 @@ export class ProjectWebviewProvider implements vscode.WebviewViewProvider {
             case 'reorder':
                 await this.projectService.reorderProjects(msg.paths);
                 break;
+            case 'reorderOrgs':
+                await this.projectService.reorderOrganizations(msg.orgs);
+                break;
             case 'openTerminal': {
                 const project = await findProject(msg.path);
                 if (!project) { return; }
@@ -223,6 +227,12 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 
 /* ── groups ── */
 .group{margin-top:2px}
+.group.org-dragging{opacity:.4;pointer-events:none}
+.group.org-drop-before{border-top:2px solid var(--vscode-focusBorder)}
+.group.org-drop-after{border-bottom:2px solid var(--vscode-focusBorder)}
+.org-drag-handle{pointer-events:auto!important;cursor:grab;margin-right:4px;opacity:0;font-size:11px;user-select:none}
+.group-header:hover .org-drag-handle{opacity:.5}
+.org-drag-handle:hover{opacity:1!important}
 .group-header{display:flex;align-items:center;padding:4px 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--vscode-sideBarSectionHeader-foreground,var(--vscode-foreground));cursor:pointer;user-select:none;opacity:.7;border-radius:2px;transition:background .1s,opacity .1s}
 .group-header:hover{opacity:1}
 .group-header.org-drop-target{background:var(--vscode-list-dropBackground,rgba(0,120,215,.15));outline:1px dashed var(--vscode-focusBorder);opacity:1}
@@ -376,6 +386,7 @@ let allProjects      = [];
 let allOrganizations = [];
 let activeRootPath   = '';
 let dragSrcPath      = null;
+let dragSrcOrg       = null;
 let ctxProject       = null;
 let spProject        = null;
 let spColor          = '';
@@ -469,20 +480,45 @@ function renderGrouped(projects) {
         }
     }
     const frag = document.createDocumentFragment();
-    for (const org of [...orgMap.keys()].sort()) { frag.appendChild(makeGroup(org, orgMap.get(org), false)); }
+    for (const org of orgMap.keys()) { frag.appendChild(makeGroup(org, orgMap.get(org), false)); }
     if (noOrg.length > 0) { frag.appendChild(makeGroup('No Organization', noOrg, true)); }
     listEl.appendChild(frag);
+}
+
+function clearOrgDropIndicators() {
+    document.querySelectorAll('.org-drop-before,.org-drop-after').forEach(x =>
+        x.classList.remove('org-drop-before', 'org-drop-after'));
 }
 
 function makeGroup(label, projects, isUncategorized) {
     const group  = document.createElement('div');
     group.className = 'group';
+    group.dataset.org = isUncategorized ? '' : label;
 
     const header = document.createElement('div');
     header.className = 'group-header';
-    header.innerHTML =
-        '<span class="chevron">▾</span>' + escHtml(label) +
-        '<span class="group-count">' + projects.length + '</span>';
+
+    if (!isUncategorized) {
+        const orgHandle = document.createElement('span');
+        orgHandle.className = 'org-drag-handle';
+        orgHandle.textContent = '⠿';
+        orgHandle.title = 'Drag to reorder organizations';
+        orgHandle.addEventListener('mousedown', () => group.setAttribute('draggable', 'true'));
+        orgHandle.addEventListener('mouseup',   () => group.setAttribute('draggable', 'false'));
+        header.appendChild(orgHandle);
+    }
+
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.textContent = '▾';
+    header.appendChild(chevron);
+
+    header.appendChild(document.createTextNode(label));
+
+    const countEl = document.createElement('span');
+    countEl.className = 'group-count';
+    countEl.textContent = String(projects.length);
+    header.appendChild(countEl);
 
     if (!isUncategorized) {
         const renameBtn = document.createElement('button');
@@ -514,21 +550,80 @@ function makeGroup(label, projects, isUncategorized) {
         body.classList.toggle('collapsed');
     });
 
+    // ── org-level drag (reorder organizations) ───────────────────────────────
+    if (!isUncategorized) {
+        group.addEventListener('dragstart', e => {
+            if (!group.getAttribute('draggable')) { e.preventDefault(); return; }
+            dragSrcOrg  = label;
+            dragSrcPath = null;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', label);
+            group.classList.add('org-dragging');
+        });
+        group.addEventListener('dragend', () => {
+            group.removeAttribute('draggable');
+            group.classList.remove('org-dragging');
+            clearOrgDropIndicators();
+            dragSrcOrg = null;
+        });
+    }
+
+    group.addEventListener('dragover', e => {
+        if (dragSrcOrg && dragSrcOrg !== label && !isUncategorized) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            clearOrgDropIndicators();
+            const rect = group.getBoundingClientRect();
+            group.classList.add(e.clientY < rect.top + rect.height / 2 ? 'org-drop-before' : 'org-drop-after');
+            return;
+        }
+        // fall through to project-on-header drop (handled below)
+    });
+    group.addEventListener('dragleave', e => {
+        if (!group.contains(e.relatedTarget)) { group.classList.remove('org-drop-before', 'org-drop-after'); }
+    });
+    group.addEventListener('drop', e => {
+        if (dragSrcOrg && dragSrcOrg !== label && !isUncategorized) {
+            e.preventDefault();
+            e.stopPropagation();
+            const insertBefore = group.classList.contains('org-drop-before');
+            clearOrgDropIndicators();
+            // compute new org order from DOM
+            const allOrgEls = [...document.querySelectorAll('.group[data-org]:not([data-org=""])')];
+            const orgs = allOrgEls.map(g => g.dataset.org);
+            const srcIdx = orgs.indexOf(dragSrcOrg);
+            orgs.splice(srcIdx, 1);
+            const tgtIdx = orgs.indexOf(label);
+            orgs.splice(insertBefore ? tgtIdx : tgtIdx + 1, 0, dragSrcOrg);
+            // optimistic reorder of allProjects
+            const reordered = [];
+            for (const org of orgs) { reordered.push(...allProjects.filter(p => p.organization === org)); }
+            reordered.push(...allProjects.filter(p => !p.organization));
+            allProjects = reordered;
+            vscode.postMessage({ type: 'reorderOrgs', orgs });
+            render(searchEl.value);
+            return;
+        }
+    });
+
+    // ── project-on-org-header drop ───────────────────────────────────────────
     const getTargetOrg = () => isUncategorized ? '' : label;
-    const canDrop = () => {
+    const canDropProject = () => {
         if (!dragSrcPath) { return false; }
         const src = allProjects.find(p => p.rootPath === dragSrcPath);
         return !src || src.organization !== getTargetOrg();
     };
 
     header.addEventListener('dragenter', e => {
-        if (!canDrop()) { return; }
+        if (!canDropProject()) { return; }
         e.preventDefault();
         header.classList.add('org-drop-target');
     });
     header.addEventListener('dragover', e => {
-        if (!canDrop()) { return; }
+        if (!canDropProject()) { return; }
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
     });
     header.addEventListener('dragleave', e => {

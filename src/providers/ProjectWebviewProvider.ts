@@ -18,6 +18,7 @@ type WebviewMessage =
     | { type: 'copyPath'; path: string }
     | { type: 'reorder'; paths: string[] }
     | { type: 'openTerminal'; path: string }
+    | { type: 'openExternalTerminal'; path: string }
     | { type: 'openSecondaryEditor'; path: string }
     | { type: 'saveSettings'; path: string; color: string; label: string; secondaryEditor: string }
     | { type: 'renameOrg'; org: string }
@@ -28,6 +29,37 @@ async function pathExists(p: string): Promise<boolean> {
     try { await fs.access(p); return true; } catch { return false; }
 }
 
+interface TerminalDef {
+    name: string;
+    id: string;
+}
+
+const MAC_TERMINALS: Array<{ name: string; id: string; appPath: string; openArg?: string[] }> = [
+    { name: 'Terminal',   id: 'Terminal',   appPath: '/System/Applications/Utilities/Terminal.app' },
+    { name: 'iTerm2',     id: 'iTerm',      appPath: '/Applications/iTerm.app' },
+    { name: 'Warp',       id: 'Warp',       appPath: '/Applications/Warp.app' },
+    { name: 'Ghostty',    id: 'Ghostty',    appPath: '/Applications/Ghostty.app' },
+    { name: 'Alacritty',  id: 'Alacritty',  appPath: '/Applications/Alacritty.app' },
+    { name: 'WezTerm',    id: 'WezTerm',    appPath: '/Applications/WezTerm.app' },
+    { name: 'Hyper',      id: 'Hyper',      appPath: '/Applications/Hyper.app' },
+    { name: 'kitty',      id: 'kitty',      appPath: '/Applications/kitty.app' },
+];
+
+const WIN_TERMINALS: Array<{ name: string; id: string; cmd: string }> = [
+    { name: 'Windows Terminal', id: 'wt',          cmd: 'wt' },
+    { name: 'PowerShell',       id: 'powershell',  cmd: 'powershell' },
+    { name: 'Command Prompt',   id: 'cmd',         cmd: 'cmd' },
+    { name: 'Git Bash',         id: 'bash',        cmd: 'bash' },
+];
+
+const LINUX_TERMINALS: Array<{ name: string; id: string; cwdFlag: string[] }> = [
+    { name: 'GNOME Terminal', id: 'gnome-terminal',   cwdFlag: ['--working-directory'] },
+    { name: 'Konsole',        id: 'konsole',           cwdFlag: ['--workdir'] },
+    { name: 'Tilix',          id: 'tilix',             cwdFlag: ['--working-directory'] },
+    { name: 'xfce4-terminal', id: 'xfce4-terminal',   cwdFlag: ['--working-directory'] },
+    { name: 'xterm',          id: 'xterm',             cwdFlag: [] },
+];
+
 export class ProjectWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'projectManagerView';
     private _view?: vscode.WebviewView;
@@ -35,8 +67,69 @@ export class ProjectWebviewProvider implements vscode.WebviewViewProvider {
     constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly projectService: ProjectService,
-        private readonly configService: ConfigService
+        private readonly configService: ConfigService,
+        private readonly context: vscode.ExtensionContext
     ) {}
+
+    private async getAvailableTerminals(): Promise<TerminalDef[]> {
+        if (process.platform === 'darwin') {
+            const results: TerminalDef[] = [];
+            for (const t of MAC_TERMINALS) {
+                if (await pathExists(t.appPath)) { results.push({ name: t.name, id: t.id }); }
+            }
+            return results;
+        }
+        if (process.platform === 'win32') {
+            const always = WIN_TERMINALS.filter(t => t.id === 'cmd' || t.id === 'powershell');
+            const optional = WIN_TERMINALS.filter(t => t.id !== 'cmd' && t.id !== 'powershell');
+            const detected: TerminalDef[] = [...always.map(t => ({ name: t.name, id: t.id }))];
+            for (const t of optional) {
+                try {
+                    await new Promise<void>((res, rej) => {
+                        const p = spawn('where', [t.cmd], { stdio: 'pipe', shell: true });
+                        p.on('close', c => c === 0 ? res() : rej());
+                    });
+                    detected.push({ name: t.name, id: t.id });
+                } catch { /* not found */ }
+            }
+            return detected;
+        }
+        // Linux
+        const results: TerminalDef[] = [];
+        for (const t of LINUX_TERMINALS) {
+            try {
+                await new Promise<void>((res, rej) => {
+                    const p = spawn('which', [t.id], { stdio: 'pipe' });
+                    p.on('close', c => c === 0 ? res() : rej());
+                });
+                results.push({ name: t.name, id: t.id });
+            } catch { /* not found */ }
+        }
+        return results;
+    }
+
+    private launchTerminal(id: string, cwd: string): void {
+        if (process.platform === 'darwin') {
+            spawn('open', ['-a', id, cwd], { detached: true, stdio: 'ignore' }).unref();
+            return;
+        }
+        if (process.platform === 'win32') {
+            if (id === 'wt') {
+                spawn('wt', ['-d', cwd], { detached: true, stdio: 'ignore', shell: true }).unref();
+            } else if (id === 'powershell') {
+                spawn('powershell', ['-NoExit', '-Command', `Set-Location "${cwd}"`], { detached: true, stdio: 'ignore', shell: true }).unref();
+            } else if (id === 'bash') {
+                spawn('bash', ['--login', '-i'], { cwd, detached: true, stdio: 'ignore', shell: true }).unref();
+            } else {
+                spawn('cmd.exe', ['/k', `cd /d "${cwd}"`], { detached: true, stdio: 'ignore', shell: true }).unref();
+            }
+            return;
+        }
+        // Linux
+        const def = LINUX_TERMINALS.find(t => t.id === id);
+        const args = def?.cwdFlag.length ? [...def.cwdFlag, cwd] : [];
+        spawn(id, args, { cwd: def?.cwdFlag.length ? undefined : cwd, detached: true, stdio: 'ignore' }).unref();
+    }
 
     resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -146,6 +239,42 @@ export class ProjectWebviewProvider implements vscode.WebviewViewProvider {
                     cwd: project.rootPath
                 });
                 terminal.show();
+                break;
+            }
+            case 'openExternalTerminal': {
+                const project = await findProject(msg.path);
+                if (!project) { return; }
+                if (!(await pathExists(project.rootPath))) {
+                    vscode.window.showErrorMessage(`Path not found: ${project.rootPath}`);
+                    return;
+                }
+                const available = await this.getAvailableTerminals();
+                if (available.length === 0) {
+                    vscode.window.showErrorMessage('No supported terminals found.');
+                    return;
+                }
+                const lastId = this.context.globalState.get<string>('projectManager.preferredTerminal');
+                const lastAvailable = lastId && available.find(t => t.id === lastId);
+
+                let chosenId: string;
+                if (lastAvailable) {
+                    chosenId = lastAvailable.id;
+                } else if (available.length === 1) {
+                    chosenId = available[0].id;
+                } else {
+                    const picked = await vscode.window.showQuickPick(
+                        available.map(t => ({ label: t.name, id: t.id })),
+                        { placeHolder: 'Pick a terminal', title: 'Open in Terminal' }
+                    );
+                    if (!picked) { return; }
+                    chosenId = picked.id;
+                }
+                await this.context.globalState.update('projectManager.preferredTerminal', chosenId);
+                try {
+                    this.launchTerminal(chosenId, project.rootPath);
+                } catch {
+                    vscode.window.showErrorMessage(`Failed to open ${chosenId}.`);
+                }
                 break;
             }
             case 'openSecondaryEditor': {
@@ -340,6 +469,7 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 <div class="ctx" id="ctx">
   <div class="ctx-item" data-action="openProject">Open</div>
   <div class="ctx-item" data-action="openNew">Open in New Window</div>
+  <div class="ctx-item" data-action="openExternalTerminal">Open in Terminal</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="reveal">Reveal in Finder / Explorer</div>
   <div class="ctx-item" data-action="copyPath">Copy Path</div>

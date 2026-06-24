@@ -46,7 +46,7 @@ const openProject_1 = require("./commands/openProject");
 function activate(context) {
     const configService = new ConfigService_1.ConfigService();
     const projectService = new ProjectService_1.ProjectService(configService);
-    const provider = new ProjectWebviewProvider_1.ProjectWebviewProvider(context.extensionUri, projectService, configService);
+    const provider = new ProjectWebviewProvider_1.ProjectWebviewProvider(context.extensionUri, projectService, configService, context);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(ProjectWebviewProvider_1.ProjectWebviewProvider.viewType, provider, { webviewOptions: { retainContextWhenHidden: true } }));
     // Watch the projects JSON file for external edits
     let fileWatcher = null;

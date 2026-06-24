@@ -10,7 +10,7 @@ import { openProjectFromQuickPick } from './commands/openProject';
 export function activate(context: vscode.ExtensionContext): void {
     const configService = new ConfigService();
     const projectService = new ProjectService(configService);
-    const provider = new ProjectWebviewProvider(context.extensionUri, projectService, configService);
+    const provider = new ProjectWebviewProvider(context.extensionUri, projectService, configService, context);
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(

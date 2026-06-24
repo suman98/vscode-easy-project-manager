@@ -2,6 +2,8 @@
 
 A VS Code extension for managing and switching between workspace projects from the sidebar.
 
+![1782279538098](image/README/1782279538098.png)
+
 ## Features
 
 - **Sidebar panel** — browse all projects grouped by organization
@@ -62,7 +64,6 @@ VS Code 1.85 or later.
 
 
 
-![1782279538098](image/README/1782279538098.png)
 
 
 

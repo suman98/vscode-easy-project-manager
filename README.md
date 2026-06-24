@@ -59,3 +59,11 @@ The JSON file can be edited directly; the panel refreshes automatically on exter
 ## Requirements
 
 VS Code 1.85 or later.
+
+
+
+![1782279538098](image/README/1782279538098.png)
+
+
+
+![1782279552581](image/README/1782279552581.png)

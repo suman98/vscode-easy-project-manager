@@ -303,11 +303,19 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 .swatch.selected{border-color:var(--vscode-focusBorder);transform:scale(1.15)}
 .swatch-none{background:transparent;border:1.5px dashed var(--vscode-input-border,#666)}
 .swatch-none::after{content:'×';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;opacity:.5;line-height:1}
+.sp-color-custom-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+#sp-color-picker{width:28px;height:22px;padding:1px;border:1px solid var(--vscode-input-border,transparent);border-radius:3px;background:var(--vscode-input-background);cursor:pointer;flex-shrink:0}
+.sp-color-picker-val{font-size:11px;opacity:.55;font-family:monospace;letter-spacing:.02em}
 .sp-footer{display:flex;gap:6px;margin-top:10px}
 .btn-primary{flex:1;padding:5px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:2px;cursor:pointer;font-family:inherit;font-size:inherit}
 .btn-primary:hover{background:var(--vscode-button-hoverBackground)}
 .btn-secondary{padding:5px 12px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));border:none;border-radius:2px;cursor:pointer;font-family:inherit;font-size:inherit}
 .btn-secondary:hover{opacity:.85}
+.loading-overlay{position:fixed;inset:0;background:var(--vscode-sideBar-background,var(--vscode-editor-background));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;opacity:0;pointer-events:none;transition:opacity .15s}
+.loading-overlay.visible{opacity:1;pointer-events:all}
+.loading-spinner{width:18px;height:18px;border:2px solid var(--vscode-foreground);border-top-color:transparent;border-radius:50%;animation:spin .65s linear infinite;opacity:.7}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-label{margin-top:10px;font-size:11px;opacity:.5}
 </style>
 </head>
 <body>
@@ -321,6 +329,12 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
 </div>
 
 <div id="list"></div>
+
+<!-- loading overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-label">Opening project…</div>
+</div>
 
 <!-- context menu -->
 <div class="ctx" id="ctx">
@@ -347,6 +361,11 @@ body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);col
   <div class="sp-field">
     <div class="sp-field-label">Color</div>
     <div class="color-swatches" id="color-swatches"></div>
+    <div class="sp-color-custom-row">
+      <span class="sp-field-label">Custom</span>
+      <input type="color" id="sp-color-picker" value="#000000"/>
+      <span class="sp-color-picker-val" id="sp-color-picker-val"></span>
+    </div>
   </div>
 
   <div class="sp-field">
@@ -399,7 +418,20 @@ const settingsEl  = document.getElementById('settings-panel');
 const spTitleEl   = document.getElementById('sp-title');
 const spLabelEl   = document.getElementById('sp-label');
 const spEditorEl  = document.getElementById('sp-editor');
-const swatchesEl  = document.getElementById('color-swatches');
+const swatchesEl     = document.getElementById('color-swatches');
+const colorPickerEl  = document.getElementById('sp-color-picker');
+const colorPickerVal = document.getElementById('sp-color-picker-val');
+
+function selectSwatch(color) {
+    swatchesEl.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
+    const match = swatchesEl.querySelector('[data-color="' + color + '"]');
+    if (match) { match.classList.add('selected'); }
+}
+
+function setPickerColor(color) {
+    colorPickerEl.value = color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#000000';
+    colorPickerVal.textContent = color || '';
+}
 
 // ── build color swatches (once) ───────────────────────────────────────────────
 PRESET_COLORS.forEach(c => {
@@ -409,15 +441,35 @@ PRESET_COLORS.forEach(c => {
     s.dataset.color = c;
     s.addEventListener('click', () => {
         spColor = c;
-        swatchesEl.querySelectorAll('.swatch').forEach(x => x.classList.remove('selected'));
-        s.classList.add('selected');
+        selectSwatch(c);
+        setPickerColor(c);
     });
     swatchesEl.appendChild(s);
 });
 
+colorPickerEl.addEventListener('input', () => {
+    spColor = colorPickerEl.value;
+    colorPickerVal.textContent = spColor;
+    selectSwatch(spColor); // deselects presets if no match
+});
+
 // ── messages ──────────────────────────────────────────────────────────────────
+const loadingEl = document.getElementById('loading-overlay');
+let loadingTimer = null;
+
+function showLoading() {
+    loadingEl.classList.add('visible');
+    if (loadingTimer) { clearTimeout(loadingTimer); }
+    loadingTimer = setTimeout(hideLoading, 5000);
+}
+function hideLoading() {
+    loadingEl.classList.remove('visible');
+    if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+}
+
 window.addEventListener('message', ({ data }) => {
     if (data.type === 'update') {
+        hideLoading();
         allProjects      = data.projects;
         allOrganizations = data.allOrganizations || [];
         activeRootPath   = data.activeRootPath   || '';
@@ -700,6 +752,7 @@ function makeItem(project, draggable, q) {
 
     el.addEventListener('click', e => {
         if (e.target.closest('.drag-handle') || e.target.closest('.proj-actions')) { return; }
+        showLoading();
         vscode.postMessage({ type: 'openProject', path: project.rootPath });
     });
 
@@ -778,6 +831,7 @@ ctxEl.addEventListener('click', e => {
     if (action === 'openProjectSettings') {
         openSettings(ctxProject);
     } else {
+        if (action === 'openProject' || action === 'openNew') { showLoading(); }
         vscode.postMessage({ type: action, path: ctxProject.rootPath });
     }
     ctxEl.classList.remove('open');
@@ -800,10 +854,8 @@ function openSettings(project) {
     spLabelEl.value  = project.label  || '';
     spEditorEl.value = project.secondaryEditor || '';
 
-    // mark selected swatch
-    swatchesEl.querySelectorAll('.swatch').forEach(s => {
-        s.classList.toggle('selected', s.dataset.color === spColor);
-    });
+    selectSwatch(spColor);
+    setPickerColor(spColor);
 
     settingsEl.classList.add('open');
     spLabelEl.focus();

@@ -761,6 +761,7 @@ function makeGroup(label, projects, isUncategorized) {
     // ── org-level drag (reorder organizations) ───────────────────────────────
     if (!isUncategorized) {
         group.addEventListener('dragstart', e => {
+            if (e.target !== group) { return; } // bubbled from a project item — ignore
             if (!group.getAttribute('draggable')) { e.preventDefault(); return; }
             dragSrcOrg  = label;
             dragSrcPath = null;
@@ -930,7 +931,9 @@ function attachDrag(el, project) {
 
     el.addEventListener('dragstart', e => {
         dragSrcPath = project.rootPath;
-        el.classList.add('dragging');
+        dragSrcOrg  = null;
+        e.stopPropagation(); // prevent bubbling to org group dragstart (which would cancel the drag)
+        requestAnimationFrame(() => el.classList.add('dragging'));
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', project.rootPath);
     });
@@ -948,7 +951,9 @@ function attachDrag(el, project) {
         const rect = el.getBoundingClientRect();
         el.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drop-before' : 'drop-after');
     });
-    el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after'));
+    el.addEventListener('dragleave', e => {
+        if (!el.contains(e.relatedTarget)) { el.classList.remove('drop-before', 'drop-after'); }
+    });
     el.addEventListener('drop', e => {
         if (!dragSrcPath || dragSrcPath === project.rootPath) { return; }
         e.preventDefault();

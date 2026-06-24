@@ -75,6 +75,15 @@ function activate(context) {
         }
     }), vscode.workspace.onDidChangeWorkspaceFolders(() => provider.sendProjects()), vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () => (0, addProject_1.addCurrentWorkspace)(projectService, provider)), vscode.commands.registerCommand('projectManager.refresh', () => provider.refresh()), vscode.commands.registerCommand('projectManager.openProject', () => (0, openProject_1.openProjectFromQuickPick)(projectService, configService)), vscode.commands.registerCommand('projectManager.currentWorkspaceAdded', () => {
         vscode.window.showInformationMessage('This workspace is already added to Project Manager.');
+    }), vscode.commands.registerCommand('projectManager.editJson', async () => {
+        const filePath = configService.getProjectsFilePath();
+        try {
+            const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+            await vscode.window.showTextDocument(doc, { preview: false });
+        }
+        catch {
+            vscode.window.showErrorMessage(`Could not open ${filePath}`);
+        }
     }));
     context.subscriptions.push({
         dispose: () => { fileWatcher?.close(); }

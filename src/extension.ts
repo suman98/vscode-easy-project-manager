@@ -66,6 +66,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.commands.registerCommand('projectManager.currentWorkspaceAdded', () => {
             vscode.window.showInformationMessage('This workspace is already added to Project Manager.');
+        }),
+
+        vscode.commands.registerCommand('projectManager.editJson', async () => {
+            const filePath = configService.getProjectsFilePath();
+            try {
+                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+                await vscode.window.showTextDocument(doc, { preview: false });
+            } catch {
+                vscode.window.showErrorMessage(`Could not open ${filePath}`);
+            }
         })
     );
 

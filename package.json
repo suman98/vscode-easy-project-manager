@@ -117,6 +117,12 @@
                 "title": "Search Projects",
                 "category": "Project Manager",
                 "icon": "$(search)"
+            },
+            {
+                "command": "projectManager.editJson",
+                "title": "Edit JSON",
+                "category": "Project Manager",
+                "icon": "$(json)"
             }
         ],
         "menus": {
@@ -132,9 +138,14 @@
                     "group": "navigation@1"
                 },
                 {
-                    "command": "projectManager.refresh",
+                    "command": "projectManager.editJson",
                     "when": "view == projectManagerView",
                     "group": "navigation@2"
+                },
+                {
+                    "command": "projectManager.refresh",
+                    "when": "view == projectManagerView",
+                    "group": "navigation@3"
                 }
             ]
         }

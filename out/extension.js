@@ -73,7 +73,7 @@ function activate(context) {
             setupFileWatcher();
             provider.refresh();
         }
-    }), vscode.workspace.onDidChangeWorkspaceFolders(() => provider.sendProjects()), vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () => (0, addProject_1.addCurrentWorkspace)(projectService, provider)), vscode.commands.registerCommand('projectManager.refresh', () => provider.refresh()), vscode.commands.registerCommand('projectManager.openProject', () => (0, openProject_1.openProjectFromQuickPick)(projectService, configService)), vscode.commands.registerCommand('projectManager.currentWorkspaceAdded', () => {
+    }), vscode.workspace.onDidChangeWorkspaceFolders(() => provider.sendProjects()), vscode.commands.registerCommand('projectManager.addCurrentWorkspace', () => (0, addProject_1.addCurrentWorkspace)(projectService, provider)), vscode.commands.registerCommand('projectManager.refresh', () => provider.refresh()), vscode.commands.registerCommand('projectManager.openWorkspacePath', () => provider.openWorkspacePath()), vscode.commands.registerCommand('projectManager.openProject', () => (0, openProject_1.openProjectFromQuickPick)(projectService, configService)), vscode.commands.registerCommand('projectManager.currentWorkspaceAdded', () => {
         vscode.window.showInformationMessage('This workspace is already added to Project Manager.');
     }), vscode.commands.registerCommand('projectManager.editJson', async () => {
         const filePath = configService.getProjectsFilePath();

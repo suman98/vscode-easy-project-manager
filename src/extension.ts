@@ -60,6 +60,10 @@ export function activate(context: vscode.ExtensionContext): void {
             provider.refresh()
         ),
 
+        vscode.commands.registerCommand('projectManager.openWorkspacePath', () =>
+            provider.openWorkspacePath()
+        ),
+
         vscode.commands.registerCommand('projectManager.openProject', () =>
             openProjectFromQuickPick(projectService, configService)
         ),

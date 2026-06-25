@@ -76,6 +76,12 @@
                 "icon": "$(refresh)"
             },
             {
+                "command": "projectManager.openWorkspacePath",
+                "title": "Open Workspace",
+                "category": "Project Manager",
+                "icon": "$(browser)"
+            },
+            {
                 "command": "projectManager.openProject",
                 "title": "Open Project",
                 "category": "Project Manager"
@@ -142,14 +148,19 @@
                     "group": "navigation@1"
                 },
                 {
-                    "command": "projectManager.editJson",
+                    "command": "projectManager.openWorkspacePath",
                     "when": "view == projectManagerView",
                     "group": "navigation@2"
                 },
                 {
-                    "command": "projectManager.refresh",
+                    "command": "projectManager.editJson",
                     "when": "view == projectManagerView",
                     "group": "navigation@3"
+                },
+                {
+                    "command": "projectManager.refresh",
+                    "when": "view == projectManagerView",
+                    "group": "navigation@4"
                 }
             ]
         }

@@ -37,8 +37,10 @@ exports.ProjectWebviewProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs/promises"));
+const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const addProject_1 = require("../commands/addProject");
+const FileUtils_1 = require("../utils/FileUtils");
 async function pathExists(p) {
     try {
         await fs.access(p);
@@ -166,6 +168,67 @@ class ProjectWebviewProvider {
         const alreadyAdded = activeRootPath ? projects.some(p => p.rootPath === activeRootPath) : false;
         await vscode.commands.executeCommand('setContext', 'projectManager.currentWorkspaceAdded', alreadyAdded);
         this._view.webview.postMessage({ type: 'update', projects, allOrganizations, activeRootPath });
+    }
+    /**
+     * Input box where the user can paste/type a path, or use the folder button
+     * to browse the file explorer. Resolves to the entered path, or undefined if cancelled.
+     */
+    promptWorkspacePath() {
+        return new Promise(resolve => {
+            const ib = vscode.window.createInputBox();
+            ib.title = 'Open Workspace Path';
+            ib.placeholder = '/path/to/workspace';
+            ib.prompt = 'Paste a path, or use the folder icon to browse';
+            ib.ignoreFocusOut = true;
+            ib.buttons = [{ iconPath: new vscode.ThemeIcon('folder-opened'), tooltip: 'Browse…' }];
+            let done = false;
+            const finish = (val) => {
+                if (done) {
+                    return;
+                }
+                done = true;
+                ib.hide();
+                resolve(val);
+            };
+            ib.onDidTriggerButton(async () => {
+                const lastBrowsed = this.context.globalState.get('projectManager.lastBrowsedWorkspace');
+                const picked = await vscode.window.showOpenDialog({
+                    canSelectFolders: true,
+                    canSelectFiles: false,
+                    canSelectMany: false,
+                    openLabel: 'Select Workspace',
+                    defaultUri: lastBrowsed ? vscode.Uri.file(path.dirname(lastBrowsed)) : undefined
+                });
+                if (picked?.[0]) {
+                    // Selecting in the dialog opens immediately.
+                    const fsPath = picked[0].fsPath;
+                    void this.context.globalState.update('projectManager.lastBrowsedWorkspace', fsPath);
+                    finish(fsPath);
+                }
+            });
+            ib.onDidAccept(() => {
+                const v = ib.value.trim();
+                if (!v) {
+                    return;
+                } // keep open until a path is entered or cancelled
+                finish(v);
+            });
+            ib.onDidHide(() => finish(undefined));
+            ib.show();
+        });
+    }
+    /** Prompt for a workspace path (paste or browse) and open it if it exists. */
+    async openWorkspacePath() {
+        const input = await this.promptWorkspacePath();
+        if (!input) {
+            return;
+        }
+        const folderPath = (0, FileUtils_1.resolvePath)(input.trim());
+        if (!(await pathExists(folderPath))) {
+            vscode.window.showErrorMessage(`Path not found: ${folderPath}`);
+            return;
+        }
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folderPath), this.configService.isOpenInNewWindow());
     }
     async handleMessage(msg) {
         const findProject = async (p) => {
